@@ -1,14 +1,18 @@
-"use client";
+// src/app/page.js
+"use client"; // Indispensabile per usare useState, useEffect, e i tuoi altri hook
+
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import BookCard from "../components/BookCard";
 import Container from "react-bootstrap/Container";
-import Navbar from "react-bootstrap/Navbar";
-import Form from "react-bootstrap/Form";
-import Button from "react-bootstrap/Button";
 import Row from "react-bootstrap/Row";
 import Col from "react-bootstrap/Col";
 import Spinner from "react-bootstrap/Spinner";
+import ListGroup from "react-bootstrap/ListGroup"; // Importa ListGroup
+import NavbarCustom from "@/components/NavbarCustom";
+
+const LOCAL_STORAGE_KEY = "searchHistory"; // Chiave per il localStorage
+const MAX_HISTORY_ITEMS = 10; // Limite delle stringhe nella cronologia
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -17,25 +21,70 @@ export default function Home() {
   const [startIndex, setStartIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [searchHistory, setSearchHistory] = useState([]); // Nuovo stato per la cronologia
 
-  // Funzione di ricerca (iniziale)
-  const searchBooks = (e) => {
+  // --- LOGICA PER LA CRONOLOGIA DI RICERCA ---
+  // Carica la cronologia dal localStorage all'avvio del componente
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const storedHistory = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (storedHistory) {
+        try {
+          setSearchHistory(JSON.parse(storedHistory));
+        } catch (e) {
+          console.error(
+            "Errore nel parsing della cronologia da localStorage:",
+            e
+          );
+          localStorage.removeItem(LOCAL_STORAGE_KEY); // Pulisci dati corrotti
+        }
+      }
+    }
+  }, []); // Esegui solo al mount del componente
+
+  // Funzione per aggiungere una ricerca alla cronologia
+  const addSearchToHistory = useCallback((searchQuery) => {
+    if (!searchQuery.trim()) return;
+
+    setSearchHistory((prevHistory) => {
+      // Filtra la query esistente per evitare duplicati e la rende la più recente
+      const newHistory = prevHistory.filter(
+        (item) => item.toLowerCase() !== searchQuery.toLowerCase()
+      );
+      // Aggiungi la nuova query all'inizio e limita la dimensione
+      const updatedHistory = [searchQuery, ...newHistory].slice(
+        0,
+        MAX_HISTORY_ITEMS
+      );
+
+      // Salva nel localStorage
+      if (typeof window !== "undefined") {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updatedHistory));
+      }
+      return updatedHistory;
+    });
+  }, []); // Nessuna dipendenza, in quanto prevHistory è gestito dalla callback
+
+  // Funzione di ricerca iniziale (gestita dal submit del form)
+  const handleInitialSearch = (e) => {
     e.preventDefault();
     if (!query.trim()) {
-      setError("Inserisci una parola chiave per la ricerca");
+      setError("Inserisci una parola chiave per la ricerca.");
       return;
     }
 
-    setBooks([]);
-    setStartIndex(0);
-    setError("");
-    fetchBooks(true);
+    setBooks([]); // Resetta i libri
+    setStartIndex(0); // Resetta l'indice di partenza
+    setHasMore(true); // Assumiamo ci siano più risultati inizialmente
+    setError(""); // Pulisci errori precedenti
+    fetchBooks(true, query); // Avvia la ricerca iniziale con la query corrente
   };
 
   // Funzione fetch (iniziale o successiva) - wrapped in useCallback
   const fetchBooks = useCallback(
-    async (initial = false) => {
-      if (!query.trim()) return;
+    async (initial = false, currentQuery = query) => {
+      // Aggiunto currentQuery come parametro
+      if (!currentQuery.trim()) return; // Usa currentQuery
       if (!initial && loading) return;
 
       setLoading(true);
@@ -44,18 +93,24 @@ export default function Home() {
       try {
         const res = await axios.get(
           `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(
-            query
+            currentQuery // Usa currentQuery qui
           )}&startIndex=${index}&maxResults=20`
         );
 
         const items = res.data.items || [];
 
-        // Filtra solo i libri con preview disponibile
+        console.log(
+          `API ha restituito ${items.length} risultati per startIndex=${index}`
+        );
+
+        // Filtra solo i libri con preview disponibile e viewability
         const filtered = items.filter(
           (book) =>
             book.volumeInfo?.previewLink &&
             ["PARTIAL", "ALL_PAGES"].includes(book.accessInfo?.viewability)
         );
+
+        console.log(`Dopo il filtro: ${filtered.length} risultati visibili`);
 
         if (initial) {
           setBooks(filtered);
@@ -65,16 +120,22 @@ export default function Home() {
           setStartIndex((prev) => prev + 20);
         }
 
-        setHasMore(items.length === 20); // Google Books restituisce sempre max 20 per chiamata
-        setError("");
+        setHasMore(items.length === 20); // Continua a caricare se abbiamo riempito la pagina
+        setError(""); // Pulisci errori dopo il successo
+
+        // Aggiungi la ricerca alla cronologia SOLO SE è una ricerca iniziale e ha risultati
+        if (initial && filtered.length > 0) {
+          addSearchToHistory(currentQuery); // Usa currentQuery
+        }
       } catch (err) {
         console.error("Errore durante la ricerca:", err);
         setError("Errore durante la ricerca. Riprova più tardi.");
+        setHasMore(false); // Blocca ulteriori caricamenti se c'è un errore
       } finally {
         setLoading(false);
       }
     },
-    [query, loading, startIndex]
+    [query, loading, startIndex, addSearchToHistory] // Aggiungi addSearchToHistory come dipendenza
   );
 
   // Scroll listener per infinite scroll
@@ -82,12 +143,12 @@ export default function Home() {
     const handleScroll = () => {
       if (
         window.innerHeight + window.scrollY >=
-          document.body.offsetHeight - 500 &&
+          document.body.offsetHeight - 500 && // 500px prima della fine della pagina
         hasMore &&
         !loading &&
-        books.length > 0
+        books.length > 0 // Assicurati che ci siano libri già caricati
       ) {
-        fetchBooks(); // carica la prossima pagina
+        fetchBooks(false); // carica la prossima pagina
       }
     };
 
@@ -95,107 +156,76 @@ export default function Home() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [hasMore, loading, books.length, fetchBooks]);
 
+  // --- Funzione per gestire il click su un elemento della cronologia ---
+  const handleHistoryClick = (historyItem) => {
+    setQuery(historyItem); // Imposta la barra di ricerca con il termine cliccato
+    // Esegui una nuova ricerca iniziale con il termine della cronologia
+    setBooks([]);
+    setStartIndex(0);
+    setHasMore(true);
+    setError("");
+    fetchBooks(true, historyItem); // Passa la query direttamente
+  };
+
   return (
     <>
-      {/* Navbar con barra di ricerca */}
-      <Navbar bg="dark" variant="dark" expand="lg" className="mb-4">
-        <Container fluid>
-          <Navbar.Brand href="/" className="me-2">
-            📚 Home
-          </Navbar.Brand>
+      <NavbarCustom
+        query={query}
+        setQuery={setQuery}
+        loading={loading}
+        handleSearch={handleInitialSearch}
+      />
 
-          {/* Mobile: Form sotto il brand */}
-          <div className="d-lg-none w-100 mt-2">
-            <Form onSubmit={searchBooks}>
-              <div className="d-flex gap-2">
-                <Form.Control
-                  type="search"
-                  placeholder="Cerca libri..."
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  size="sm"
-                />
-                <Button
-                  type="submit"
-                  variant="outline-light"
-                  disabled={loading}
-                  size="sm"
-                >
-                  {loading ? (
-                    <Spinner animation="border" size="sm" />
-                  ) : (
-                    "Cerca"
-                  )}
-                </Button>
-              </div>
-            </Form>
-          </div>
-
-          {/* Desktop: Form inline */}
-          <Form className="d-none d-lg-flex ms-auto" onSubmit={searchBooks}>
-            <Form.Control
-              type="search"
-              placeholder="Cerca libri o fumetti..."
-              className="me-2"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              style={{ minWidth: "300px" }}
-            />
-            <Button type="submit" variant="outline-light" disabled={loading}>
-              {loading ? <Spinner animation="border" size="sm" /> : "Cerca"}
-            </Button>
-          </Form>
-        </Container>
-      </Navbar>
-
-      {/* Suggerimenti per la ricerca */}
-      {!books.length && !loading && !error && (
-        <Container fluid className="px-3">
+      <Container fluid className="px-3">
+        {/* Visualizzazione della cronologia di ricerca o messaggio iniziale */}
+        {!books.length && !loading && !error && (
           <div className="text-center mb-4">
-            <h5 className="mb-3">💡 Suggerimenti per la ricerca:</h5>
+            <h5 className="mb-3">📜 Storico delle ricerche:</h5>
             <div className="row justify-content-center">
               <div className="col-12 col-md-10 col-lg-8">
-                <div className="d-flex flex-column gap-2 text-start">
-                  <div className="p-2 bg-light rounded">
-                    <strong>Titolo:</strong>{" "}
-                    <small>&quot;Harry Potter e la pietra filosofale&quot;</small>
-                  </div>
-                  <div className="p-2 bg-light rounded">
-                    <strong>Autore:</strong>{" "}
-                    <small>&quot;Stephen King&quot;</small>
-                  </div>
-                  <div className="p-2 bg-light rounded">
-                    <strong>Genere:</strong>{" "}
-                    <small>&quot;fantasy&quot;, &quot;thriller&quot;, &quot;fumetti&quot;</small>
-                  </div>
-                  <div className="p-2 bg-light rounded">
-                    <strong>Termini generici:</strong>{" "}
-                    <small>&quot;programmazione&quot;, &quot;storia&quot;, &quot;cucina&quot;</small>
-                  </div>
-                </div>
+                <ListGroup>
+                  {searchHistory.map((item, index) => (
+                    <ListGroup.Item
+                      key={index}
+                      action
+                      onClick={() => handleHistoryClick(item)}
+                      className="text-start"
+                    >
+                      {item}
+                    </ListGroup.Item>
+                  ))}
+                </ListGroup>
               </div>
             </div>
           </div>
-        </Container>
-      )}
+        )}
 
-      {/* Risultati */}
-      <Container fluid className="px-3">
+        {/* Messaggi di stato (Caricamento, Errore, Nessun Risultato) */}
         {error && (
-          <div className="alert alert-danger" role="alert">
+          <div className="alert alert-danger my-4" role="alert">
             ⚠️ {error}
           </div>
         )}
 
+        {loading &&
+          books.length === 0 && ( // Mostra spinner solo se nessun libro è ancora caricato
+            <div className="text-center my-5">
+              <Spinner animation="grow" variant="primary" className="me-2" />
+              <span className="d-none d-sm-inline">Caricamento libri...</span>
+              <span className="d-sm-none">Caricamento...</span>
+            </div>
+          )}
+
+        {/* Griglia dei risultati della ricerca */}
         <Row className="g-3">
           {books.map((book, index) => (
             <Col
-              key={`${book.id}-${index}`}
+              key={`${book.id}-${index}`} // Chiave combinata per maggiore unicità
               xs={12}
-              sm={12}
-              md={12}
-              lg={6}
-              xl={6}
+              sm={6}
+              md={4}
+              lg={3}
+              xl={3}
               className="d-flex"
             >
               <div className="w-100">
@@ -205,14 +235,7 @@ export default function Home() {
           ))}
         </Row>
 
-        {loading && (
-          <div className="text-center mt-4 mb-4">
-            <Spinner animation="grow" variant="primary" className="me-2" />
-            <span className="d-none d-sm-inline">Caricamento libri...</span>
-            <span className="d-sm-none">Caricamento...</span>
-          </div>
-        )}
-
+        {/* Messaggio "Scorri per caricare altri" */}
         {!loading && hasMore && books.length > 0 && (
           <div className="text-center mt-4 mb-4">
             <small className="text-muted">
@@ -225,7 +248,8 @@ export default function Home() {
           </div>
         )}
 
-        {!hasMore && books.length > 0 && (
+        {/* Messaggio "Fine risultati" */}
+        {!loading && !hasMore && books.length > 0 && (
           <div className="text-center mt-4 mb-4">
             <small className="text-muted">
               ✅{" "}
