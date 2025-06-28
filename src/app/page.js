@@ -210,7 +210,7 @@ export default function Home() {
         {loading &&
           books.length === 0 && ( // Mostra spinner solo se nessun libro è ancora caricato
             <div className="text-center my-5">
-              <Spinner animation="grow" variant="primary" className="me-2" />
+              <Spinner animation="grow" className="me-2" />
               <span className="d-none d-sm-inline">Caricamento libri...</span>
               <span className="d-sm-none">Caricamento...</span>
             </div>
