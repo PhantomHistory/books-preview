@@ -13,10 +13,8 @@ export default function BookCard({ book }) {
   };
 
   const cleanThumbnailUrl = info.imageLinks?.thumbnail?.replace(
-    /([&?])zoom=1(&)?/,
-    (match, p1, p2) => {
-      return p2 ? p1 : "";
-    }
+    /([&?])zoom=1(&|$)/,
+    (match, p1, p2) => `${p1}zoom=2${p2 === "&" ? "&" : ""}`
   );
 
   const previewHref =
@@ -45,9 +43,11 @@ export default function BookCard({ book }) {
         />
       )}
       <Card.Body>
-        <Card.Title >{truncateText(info.title, 60)}</Card.Title>
+        <Card.Title>{truncateText(info.title, 60)}</Card.Title>
         {info.authors && (
-          <Card.Text className="mb-0">di {truncateText(info.authors.join(", "),40)}</Card.Text>
+          <Card.Text className="mb-0">
+            di {truncateText(info.authors.join(", "), 40)}
+          </Card.Text>
         )}
       </Card.Body>
     </Card>
