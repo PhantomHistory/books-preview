@@ -11,17 +11,18 @@ export default function BookCard({ book }) {
 
   useEffect(() => {
     const connection =
-      navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      navigator.connection ||
+      navigator.mozConnection ||
+      navigator.webkitConnection;
 
     if (connection) {
       const type = connection.effectiveType || "4g";
       if (type === "5g") {
         setZoomLevel(3);
-        console.log(zoomLevel,'zoom 3')
+        console.log(zoomLevel, "zoom 3");
       } else {
         setZoomLevel(2);
-                console.log(zoomLevel,'zoom 2 ')
-
+        console.log(zoomLevel, "zoom 2 ");
       }
     }
   }, []);
@@ -55,14 +56,13 @@ export default function BookCard({ book }) {
       onClick={handleCardClick}
       style={{ cursor: previewHref ? "pointer" : "default" }}
     >
-      {info.imageLinks?.thumbnail && (
-        <Card.Img
-          src={cleanThumbnailUrl}
-          alt={info.title}
-          className="object-fit-contain"
-          loading="lazy" // lazy loading nativo
-        />
-      )}
+      <Card.Img
+        src={cleanThumbnailUrl}
+        alt={info.title}
+        className="object-fit-contain"
+        loading="lazy" // lazy loading nativo
+      />
+
       <Card.Body>
         <Card.Title>{truncateText(info.title, 60)}</Card.Title>
         {info.authors && (
@@ -70,6 +70,9 @@ export default function BookCard({ book }) {
             di {truncateText(info.authors.join(", "), 40)}
           </Card.Text>
         )}
+        <Card.Text className="text-muted small fst-italic mt-2 text-end">
+          Tocca per vedere l'anteprima
+        </Card.Text>
       </Card.Body>
     </Card>
   );
